@@ -10,7 +10,7 @@ interface NavigationProps {
 const Navigation = ({  }: NavigationProps) => {
   return (
     <div className="w-64 h-screen flex flex-col bg-white border-r-2 border-border shrink-0 px-4 py-8">
-      <h2 className="text-5xl text-center font-bold font-heading text-foreground mb-8">
+      <h2 className="text-5xl font-bold font-heading text-foreground ml-2 mb-8">
         Thesis
       </h2>
       <nav className="flex flex-col gap-3">
