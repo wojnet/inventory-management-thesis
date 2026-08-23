@@ -1,0 +1,215 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum WarehouseRole {
+  ADMIN
+  WORKER
+}
+
+enum AttributeDataType {
+  TEXT
+  NUMBER
+  BOOLEAN
+  DATE
+}
+
+enum ActionOperation {
+  INCREASE_QUANTITY
+  DECREASE_QUANTITY
+  SET_QUANTITY
+  SET_ATTRIBUTE
+}
+
+enum ChangeSource {
+  MANUAL
+  ACTION
+  AI
+  RESTORE
+}
+
+enum ChangeType {
+  CREATE
+  UPDATE
+  ARCHIVE
+  RESTORE
+}
+
+model AppUser {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique @db.VarChar(255)
+  passwordHash String   @db.Text
+  name         String   @db.VarChar(100)
+  createdAt    DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(6)
+
+  memberships    WarehouseMembership[]
+  actions         Action[]
+  changeEvents    ChangeEvent[]
+}
+
+model Warehouse {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @db.VarChar(100)
+  description String?  @db.Text
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(6)
+
+  memberships  WarehouseMembership[]
+  items        Item[]
+  attributes   ItemAttribute[]
+  actions      Action[]
+  changeEvents ChangeEvent[]
+  snapshots    WarehouseSnapshot[]
+}
+
+model WarehouseMembership {
+  id          String        @id @default(uuid()) @db.Uuid
+  userId      String        @db.Uuid
+  warehouseId String        @db.Uuid
+  role        WarehouseRole @default(WORKER)
+  createdAt   DateTime      @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime      @updatedAt @db.Timestamptz(6)
+
+  user      AppUser   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, warehouseId])
+  @@index([warehouseId])
+}
+
+model Item {
+  id          String    @id @default(uuid()) @db.Uuid
+  warehouseId String    @db.Uuid
+  name        String    @db.VarChar(150)
+  description String?   @db.Text
+  quantity    Decimal   @default(0) @db.Decimal(18, 3)
+  createdAt   DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @db.Timestamptz(6)
+  archivedAt  DateTime? @db.Timestamptz(6)
+
+  warehouse  Warehouse       @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  attributes ItemAttribute[]
+  actionSteps ActionStep[]
+  changeEntries ChangeEntry[]
+
+  @@index([warehouseId])
+}
+
+model ItemAttribute {
+  id          String            @id @default(uuid()) @db.Uuid
+  warehouseId String            @db.Uuid
+  itemId      String            @db.Uuid
+  name        String            @db.VarChar(100)
+  dataType    AttributeDataType
+  value       Json              @db.JsonB
+  createdAt   DateTime          @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime          @updatedAt @db.Timestamptz(6)
+  archivedAt  DateTime?         @db.Timestamptz(6)
+
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  item      Item      @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  actionSteps ActionStep[]
+
+  @@index([itemId])
+  @@index([warehouseId])
+}
+
+model Action {
+  id              String    @id @default(uuid()) @db.Uuid
+  warehouseId     String    @db.Uuid
+  createdByUserId String?   @db.Uuid
+  name            String    @db.VarChar(150)
+  description     String?   @db.Text
+  createdAt       DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime  @updatedAt @db.Timestamptz(6)
+  archivedAt      DateTime? @db.Timestamptz(6)
+
+  warehouse     Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  createdByUser AppUser?  @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  steps        ActionStep[]
+  changeEvents ChangeEvent[]
+
+  @@index([warehouseId])
+}
+
+model ActionStep {
+  id              String          @id @default(uuid()) @db.Uuid
+  actionId        String          @db.Uuid
+  itemId          String?         @db.Uuid
+  attributeId     String?         @db.Uuid
+  position        Int
+  operation       ActionOperation
+  numericValue    Decimal?        @db.Decimal(18, 3)
+  attributeValue  Json?           @db.JsonB
+  createdAt       DateTime        @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime        @updatedAt @db.Timestamptz(6)
+
+  action    Action         @relation(fields: [actionId], references: [id], onDelete: Cascade)
+  item      Item?          @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  attribute ItemAttribute? @relation(fields: [attributeId], references: [id], onDelete: Restrict)
+
+  @@unique([actionId, position])
+  @@index([actionId])
+}
+
+model ChangeEvent {
+  id              String       @id @default(uuid()) @db.Uuid
+  warehouseId     String       @db.Uuid
+  actorUserId     String?      @db.Uuid
+  source          ChangeSource
+  actionId        String?      @db.Uuid
+  restoredEventId String?      @db.Uuid
+  description     String?      @db.Text
+  note            String?      @db.Text
+  createdAt       DateTime     @default(now()) @db.Timestamptz(6)
+
+  warehouse     Warehouse        @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  actorUser     AppUser?         @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  action        Action?          @relation(fields: [actionId], references: [id], onDelete: SetNull)
+
+  restoredEvent ChangeEvent?  @relation("RestoreRelation", fields: [restoredEventId], references: [id], onDelete: SetNull)
+  restores      ChangeEvent[] @relation("RestoreRelation")
+
+  entries  ChangeEntry[]
+  snapshot WarehouseSnapshot?
+
+  @@index([warehouseId, createdAt])
+}
+
+model ChangeEntry {
+  id            String     @id @default(uuid()) @db.Uuid
+  changeEventId String     @db.Uuid
+  itemId        String?    @db.Uuid
+  changeType    ChangeType
+  fieldPath     String     @db.VarChar(255)
+  beforeValue   Json?      @db.JsonB
+  afterValue    Json?      @db.JsonB
+  createdAt     DateTime   @default(now()) @db.Timestamptz(6)
+
+  changeEvent ChangeEvent @relation(fields: [changeEventId], references: [id], onDelete: Cascade)
+  item        Item?       @relation(fields: [itemId], references: [id], onDelete: SetNull)
+
+  @@index([changeEventId])
+  @@index([itemId])
+}
+
+model WarehouseSnapshot {
+  id            String   @id @default(uuid()) @db.Uuid
+  warehouseId   String   @db.Uuid
+  changeEventId String   @unique @db.Uuid
+  state         Json     @db.JsonB
+  createdAt     DateTime @default(now()) @db.Timestamptz(6)
+
+  warehouse   Warehouse   @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  changeEvent ChangeEvent @relation(fields: [changeEventId], references: [id], onDelete: Cascade)
+
+  @@index([warehouseId, createdAt])
+}

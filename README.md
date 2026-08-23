@@ -18,3 +18,20 @@ This project is being developed as a part of an engineering thesis. It's a moder
 - Docker
 - ☆ Playwright ☆
 - AI model to be determined
+
+### 🚢 Docker Services
+
+|service|port|
+|-|-|
+|app|3000|
+|db|5000|
+
+### 🗝️ Environment Variables
+
+|name|description|
+|-|-|
+|POSTGRES_USER||
+|POSTGRES_PASSWORD||
+|POSTGRES_DB||
+|DATABASE_URL||
+|NODE_ENV||
