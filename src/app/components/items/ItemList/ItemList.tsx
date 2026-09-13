@@ -2,7 +2,22 @@
 
 import ItemRecord from "./ItemRecord";
 
-const ItemList = () => {
+export interface ItemListEntry {
+  id: string;
+  name: string;
+  quantity: number;
+  customAttributes: Array<{
+    name: string;
+    value: string;
+  }>;
+  lastChange: string;
+}
+
+interface ItemListProps {
+  items: ItemListEntry[];
+}
+
+const ItemList = ({ items }: ItemListProps) => {
   return (
     <div className="bg-white border-2 border-border p-6 rounded-xl">
       <table className="w-full table-fixed">
@@ -22,18 +37,24 @@ const ItemList = () => {
             <td className="h-12">Last change</td>
             <td className="h-12"></td>
           </tr>
-          <ItemRecord
-            name="Papier do dupy"
-            quantity={23}
-            customAttributes="softness: 4"
-            lastChange={new Date()}
-          />
-          <ItemRecord
-            name="Patyczki do dupy"
-            quantity={67}
-            customAttributes=""
-            lastChange={new Date()}
-          />
+          {items.length === 0 ? (
+            <tr>
+              <td className="h-20 text-secondary" colSpan={5}>
+                No items have been seeded yet.
+              </td>
+            </tr>
+          ) : (
+            items.map((item) => (
+              <ItemRecord
+                key={item.id}
+                id={item.id}
+                name={item.name}
+                quantity={item.quantity}
+                customAttributes={item.customAttributes}
+                lastChange={item.lastChange}
+              />
+            ))
+          )}
         </tbody>
       </table>
     </div>
