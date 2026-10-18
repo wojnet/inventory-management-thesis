@@ -1,15 +1,17 @@
 "use client";
 
-import { useState } from "react";
 import {
   Home as HomeIcon,
   LayoutList as LayoutListIcon,
-  Workflow as WorkflowIcon,
-  Timeline as TimelineIcon,
-  Settings as SettingsIcon,
   Menu as MenuIcon,
+  Settings as SettingsIcon,
+  Timeline as TimelineIcon,
+  Workflow as WorkflowIcon,
   X as XIcon,
 } from "lucide-react";
+import { useState } from "react";
+import SignOutButton from "../auth/SignOutButton/SignOutButton";
+import ContextMenu from "../common/ContextMenu/ContextMenu";
 import NavigationLink from "./NavigationLink";
 
 const navigationLinks = [
@@ -41,7 +43,23 @@ const settingsLink = {
   icon: SettingsIcon,
 };
 
-const NavigationDesktop = () => {
+type NavigationProps = {
+  warehouseName: string;
+};
+
+const WarehouseHeader = ({ warehouseName }: NavigationProps) => (
+  <div className="mb-8 flex items-start justify-between gap-2 rounded-lg border border-border p-3">
+    <div className="min-w-0">
+      <p className="text-xs text-secondary">Current warehouse</p>
+      <p className="truncate text-sm font-medium">{warehouseName}</p>
+    </div>
+    <ContextMenu label={`Options for ${warehouseName}`}>
+      <p className="px-2 py-1.5 text-secondary">No options yet.</p>
+    </ContextMenu>
+  </div>
+);
+
+const NavigationDesktop = ({ warehouseName }: NavigationProps) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
 
   return (
@@ -57,6 +75,8 @@ const NavigationDesktop = () => {
       >
         Thesis
       </h2>
+
+      {isCollapsed ? null : <WarehouseHeader warehouseName={warehouseName} />}
 
       <nav className="flex flex-col gap-3">
         {navigationLinks.map((link) => (
@@ -79,15 +99,15 @@ const NavigationDesktop = () => {
         hideText={isCollapsed}
       />
 
+      <SignOutButton hideText={isCollapsed} />
+
       <button
         type="button"
         onClick={() => setIsCollapsed((prev) => !prev)}
         className="absolute top-1/2 -right-3 z-10 flex h-14 w-6 -translate-y-1/2 items-center justify-center rounded-md border border-border bg-white shadow-sm cursor-pointer"
         aria-label={isCollapsed ? "Expand navigation" : "Collapse navigation"}
       >
-        <span className="text-xs">
-          {isCollapsed ? "›" : "‹"}
-        </span>
+        <span className="text-xs">{isCollapsed ? "›" : "‹"}</span>
       </button>
     </div>
   );
@@ -101,7 +121,8 @@ interface NavigationMobileProps {
 const NavigationMobile = ({
   isOpen,
   setIsOpen,
-}: NavigationMobileProps) => {
+  warehouseName,
+}: NavigationMobileProps & NavigationProps) => {
   return (
     <div
       className={`fixed inset-y-0 left-0 z-50 flex md:hidden w-48 h-dvh flex-col bg-white border-r-2 border-border px-4 py-8 ${
@@ -120,6 +141,8 @@ const NavigationMobile = ({
       <h2 className="text-4xl font-bold font-heading text-foreground ml-2 mb-8">
         Thesis
       </h2>
+
+      <WarehouseHeader warehouseName={warehouseName} />
 
       <nav className="flex flex-col gap-3">
         {navigationLinks.map((link) => (
@@ -141,6 +164,8 @@ const NavigationMobile = ({
         icon={settingsLink.icon}
         onClick={() => setIsOpen(false)}
       />
+
+      <SignOutButton onClick={() => setIsOpen(false)} />
     </div>
   );
 };
@@ -165,16 +190,17 @@ const BurgerButton = ({ isOpen, setIsOpen }: BurgerButtonProps) => {
   );
 };
 
-const Navigation = () => {
+const Navigation = ({ warehouseName }: NavigationProps) => {
   const [isSmallNavigationOpen, setIsSmallNavigationOpen] = useState(false);
 
   return (
     <>
-      <NavigationDesktop />
+      <NavigationDesktop warehouseName={warehouseName} />
 
       <NavigationMobile
         isOpen={isSmallNavigationOpen}
         setIsOpen={setIsSmallNavigationOpen}
+        warehouseName={warehouseName}
       />
 
       <BurgerButton

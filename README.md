@@ -35,3 +35,22 @@ This project is being developed as a part of an engineering thesis. It's a moder
 |POSTGRES_DB||
 |DATABASE_URL||
 |NODE_ENV||
+
+### ⚡ Handy Shortcuts
+
+|command|description|
+|-|-|
+|`npm run dev`|start dev server|
+|`npm run build`|build for production|
+|`npm run start`|serve production build|
+|`npm run lint`|check code with Biome|
+|`npm run format`|format code with Biome|
+|`npm run seed`|seed the database|
+|`npx prisma migrate dev`|create and apply migration|
+|`npx prisma db push`|sync schema without migration|
+|`npx prisma generate`|generate Prisma Client|
+|`npx prisma studio`|open database GUI|
+|`npx prisma migrate reset`|reset database and reseed|
+|`npx playwright test`|run e2e tests|
+|`docker compose up -d`|start app and db in background|
+|`docker compose down`|stop and remove containers|

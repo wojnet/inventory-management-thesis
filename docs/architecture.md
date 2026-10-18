@@ -83,9 +83,8 @@ A mutation should:
 4. load the required state,
 5. validate domain rules,
 6. apply the state change transactionally,
-7. create the corresponding change event/entries,
-8. create or update the relevant snapshot data,
-9. return a deterministic result.
+7. create the corresponding change event/entries (diffs only),
+8. return a deterministic result.
 
 Where multiple records must change together, the operation should use a database transaction.
 
@@ -94,29 +93,29 @@ Where multiple records must change together, the operation should use a database
 The history subsystem separates three concepts:
 
 - **ChangeEvent** — one logical operation, such as a manual edit, an Action execution, an AI-confirmed operation, or a restore.
-- **ChangeEntry** — one specific item/field-level change belonging to a ChangeEvent.
-- **WarehouseSnapshot** — a point-in-time representation of warehouse state associated with a ChangeEvent.
+- **ChangeEntry** — one specific item/field-level change (a diff) belonging to a ChangeEvent.
+- **WarehouseSnapshot** — a read-only document of the exact warehouse state, created manually by a user between events. It is not linked to any ChangeEvent and is never used for restore.
 
-An Action that modifies three items therefore creates one logical `ChangeEvent` with multiple `ChangeEntry` records.
+An Action that modifies three items therefore creates one logical `ChangeEvent` with multiple `ChangeEntry` records. Mutations never write snapshots automatically.
 
 This structure allows the Timeline UI to present operations as meaningful user-level events while retaining detailed field-level information.
 
 ## 7. Restore Architecture
 
-Restoration is implemented as a new mutation rather than a destructive time-travel operation.
+Restoration is implemented as a new mutation rather than a destructive time-travel operation. It is started from the Timeline for a chosen event. Snapshots cannot be restored.
 
 Conceptually:
 
 ```text
-Historical snapshot
+Target event
+        ↓
+Rebuild target state by replaying change entries
         ↓
 Compare with current state
         ↓
 Apply required changes
         ↓
 Create RESTORE ChangeEvent
-        ↓
-Store resulting state/snapshot
 ```
 
 Previous events remain intact. A restored state can therefore itself become part of the subsequent history.

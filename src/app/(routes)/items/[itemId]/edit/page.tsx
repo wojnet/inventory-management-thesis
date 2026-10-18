@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
-import { getItemDetails } from "@/lib/items";
 import ItemEditForm from "@/app/components/items/ItemEditForm/ItemEditForm";
+import { requirePageWarehouseContext } from "@/lib/auth-context";
+import { getItemDetails } from "@/lib/items";
 
 type ItemEditPageProps = {
   params: Promise<{ itemId: string }>;
@@ -8,7 +9,8 @@ type ItemEditPageProps = {
 
 const ItemEditPage = async ({ params }: ItemEditPageProps) => {
   const { itemId } = await params;
-  const item = await getItemDetails(itemId);
+  const warehouseContext = await requirePageWarehouseContext();
+  const item = await getItemDetails(itemId, warehouseContext);
 
   if (!item) {
     notFound();

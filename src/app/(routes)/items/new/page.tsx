@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { type FormEvent, useState } from "react";
 
 type AttributeRow = {
   id: string;
@@ -61,7 +61,8 @@ const NewItemPage = () => {
       router.push("/items");
       router.refresh();
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unexpected error.";
+      const message =
+        error instanceof Error ? error.message : "Unexpected error.";
       setErrorMessage(message);
     } finally {
       setIsSubmitting(false);
@@ -73,17 +74,23 @@ const NewItemPage = () => {
       <div className="space-y-3">
         <h1 className="text-3xl font-bold">Create item</h1>
         <p className="max-w-2xl text-secondary">
-          Add a new inventory item to the default seeded warehouse.
+          Add a new inventory item to your active warehouse.
         </p>
       </div>
 
-      <form onSubmit={handleSubmit} className="max-w-xl rounded-xl border-2 border-border bg-white p-6 space-y-5">
+      <form
+        onSubmit={handleSubmit}
+        className="max-w-xl rounded-xl border-2 border-border bg-white p-6 space-y-5"
+      >
         <label className="flex flex-col gap-2 text-sm font-medium">
           Name
           <input
+            data-testid="new-item-page/name-field"
             className="h-11 rounded-lg border border-border px-3 outline-none"
             value={formState.name}
-            onChange={(event) => setFormState((prev) => ({ ...prev, name: event.target.value }))}
+            onChange={(event) =>
+              setFormState((prev) => ({ ...prev, name: event.target.value }))
+            }
             required
           />
         </label>
@@ -91,9 +98,15 @@ const NewItemPage = () => {
         <label className="flex flex-col gap-2 text-sm font-medium">
           Description
           <textarea
+            data-testid="new-item-page/description-field"
             className="min-h-28 rounded-lg border border-border px-3 py-2 outline-none"
             value={formState.description}
-            onChange={(event) => setFormState((prev) => ({ ...prev, description: event.target.value }))}
+            onChange={(event) =>
+              setFormState((prev) => ({
+                ...prev,
+                description: event.target.value,
+              }))
+            }
           />
         </label>
 
@@ -103,9 +116,15 @@ const NewItemPage = () => {
             type="number"
             step="0.001"
             min="0"
+            data-testid="new-item-page/quantity-field"
             className="h-11 rounded-lg border border-border px-3 outline-none"
             value={formState.quantity}
-            onChange={(event) => setFormState((prev) => ({ ...prev, quantity: event.target.value }))}
+            onChange={(event) =>
+              setFormState((prev) => ({
+                ...prev,
+                quantity: event.target.value,
+              }))
+            }
             required
           />
         </label>
@@ -115,8 +134,11 @@ const NewItemPage = () => {
             <h2 className="text-sm font-medium">Custom attributes</h2>
 
             <button
+              data-testid="new-item-page/add-attribute-button"
               type="button"
-              onClick={() => setAttributes((prev) => [...prev, createAttributeRow()])}
+              onClick={() =>
+                setAttributes((prev) => [...prev, createAttributeRow()])
+              }
               className="inline-flex h-9 items-center justify-center rounded-full border border-border bg-white px-4 text-xs font-medium transition-colors hover:bg-slate-50"
             >
               Add attribute
@@ -129,13 +151,20 @@ const NewItemPage = () => {
 
           <div className="space-y-4">
             {attributes.map((attribute, index) => (
-              <div key={attribute.id} className="rounded-lg border border-border p-4 space-y-3">
+              <div
+                key={attribute.id}
+                className="rounded-lg border border-border p-4 space-y-3"
+              >
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-sm font-medium">Attribute {index + 1}</p>
 
                   <button
                     type="button"
-                    onClick={() => setAttributes((prev) => prev.filter((entry) => entry.id !== attribute.id))}
+                    onClick={() =>
+                      setAttributes((prev) =>
+                        prev.filter((entry) => entry.id !== attribute.id),
+                      )
+                    }
                     className="text-xs text-secondary underline underline-offset-2"
                   >
                     Remove
@@ -171,7 +200,8 @@ const NewItemPage = () => {
                             entry.id === attribute.id
                               ? {
                                   ...entry,
-                                  dataType: event.target.value as AttributeRow["dataType"],
+                                  dataType: event.target
+                                    .value as AttributeRow["dataType"],
                                 }
                               : entry,
                           ),
@@ -191,7 +221,13 @@ const NewItemPage = () => {
                   <input
                     className="h-11 rounded-lg border border-border px-3 outline-none"
                     value={attribute.value}
-                    type={attribute.dataType === "NUMBER" ? "number" : attribute.dataType === "DATE" ? "date" : "text"}
+                    type={
+                      attribute.dataType === "NUMBER"
+                        ? "number"
+                        : attribute.dataType === "DATE"
+                          ? "date"
+                          : "text"
+                    }
                     step={attribute.dataType === "NUMBER" ? "0.001" : undefined}
                     onChange={(event) =>
                       setAttributes((prev) =>
@@ -217,6 +253,7 @@ const NewItemPage = () => {
 
         <div className="flex items-center gap-3">
           <button
+            data-testid="new-item-page/create-item-button"
             type="submit"
             disabled={isSubmitting}
             className="inline-flex h-11 items-center justify-center rounded-full border-2 border-border bg-foreground px-5 text-sm font-medium text-background transition-colors hover:bg-background hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"

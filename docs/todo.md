@@ -1,6 +1,15 @@
 # Todo
 
-1. Implement item detail, edit, and archive flow for items.
-2. Add timeline browsing and event detail views.
-3. Add reusable action creation, preview, and execution.
-4. Replace placeholder dashboard, settings, and timeline pages.
+## Next
+
+- [ ] Preserve custom attribute types when editing an item.
+- [x] Implement authentication and session handling.
+- [x] Add authorization for warehouse members and roles.
+- [ ] Implement reusable Actions: creation, ordered steps, preview, and execution.
+- [ ] Add quantity increase/decrease workflows.
+- [ ] Implement manual snapshot creation and snapshot viewing.
+- [ ] Implement event restore from the timeline with preview and confirmation.
+- [ ] Build the dashboard with useful inventory summaries.
+- [ ] Add settings functionality.
+- [ ] Add automated tests for item, history, action, and restore workflows.
+- [ ] Add the AI assistant after the core workflows are stable.

@@ -69,7 +69,7 @@ The system consists of five main functional areas:
 
 1. **Item Management System** — creation, editing, archiving, quantity management, and customizable item attributes.
 2. **Action System** — reusable operations that can modify one or multiple items and their attributes.
-3. **Change Tracking System** — records inventory mutations and stores historical snapshots.
+3. **Change Tracking System** — records inventory mutations as diffs and manages user-created snapshots.
 4. **Visual Timeline Interface** — presents change history in chronological form.
 5. **AI Assistant** — a conversational interface that helps users navigate the system and proposes controlled operations through validated application functions.
 

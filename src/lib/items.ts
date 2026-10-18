@@ -1,9 +1,6 @@
 import { Prisma } from "@/generated/prisma/client";
+import type { WarehouseContext } from "@/lib/auth-context";
 import { prisma } from "@/lib/prisma";
-import {
-  DEFAULT_ADMIN_EMAIL,
-  DEFAULT_WAREHOUSE_NAME,
-} from "@/lib/inventory-context";
 
 export interface ItemListEntry {
   id: string;
@@ -42,50 +39,28 @@ export interface UpdateItemInput {
   attributes?: CreateItemAttributeInput[];
 }
 
-export const getDefaultWarehouse = async () => {
-  return prisma.warehouse.findFirst({
-    where: {
-      name: DEFAULT_WAREHOUSE_NAME,
-    },
-    select: {
-      id: true,
-      name: true,
-      memberships: {
-        where: {
-          user: {
-            email: DEFAULT_ADMIN_EMAIL,
-          },
-        },
-        select: {
-          id: true,
-        },
-      },
-    },
-  });
-};
-
 function formatAttributeValue(value: unknown): string {
   if (value === null || value === undefined) {
     return "";
   }
 
-  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
     return String(value);
   }
 
   return JSON.stringify(value);
 }
 
-export const getItemList = async (): Promise<ItemListEntry[]> => {
-  const warehouse = await getDefaultWarehouse();
-
-  if (!warehouse) {
-    return [];
-  }
-
+export const getItemList = async ({
+  warehouseId,
+}: WarehouseContext): Promise<ItemListEntry[]> => {
   const items = await prisma.item.findMany({
     where: {
-      warehouseId: warehouse.id,
+      warehouseId,
       archivedAt: null,
     },
     orderBy: {
@@ -123,17 +98,14 @@ export const getItemList = async (): Promise<ItemListEntry[]> => {
   }));
 };
 
-export const getItemDetails = async (itemId: string): Promise<ItemDetailsEntry | null> => {
-  const warehouse = await getDefaultWarehouse();
-
-  if (!warehouse) {
-    return null;
-  }
-
+export const getItemDetails = async (
+  itemId: string,
+  { warehouseId }: WarehouseContext,
+): Promise<ItemDetailsEntry | null> => {
   const item = await prisma.item.findFirst({
     where: {
       id: itemId,
-      warehouseId: warehouse.id,
+      warehouseId,
     },
     select: {
       id: true,
@@ -176,7 +148,10 @@ export const getItemDetails = async (itemId: string): Promise<ItemDetailsEntry |
   };
 };
 
-export const createItem = async (input: CreateItemInput) => {
+export const createItem = async (
+  input: CreateItemInput,
+  { userId, warehouseId }: WarehouseContext,
+) => {
   const name = input.name.trim();
 
   if (!name) {
@@ -185,12 +160,6 @@ export const createItem = async (input: CreateItemInput) => {
 
   if (!Number.isFinite(input.quantity) || input.quantity < 0) {
     throw new Error("Quantity must be a non-negative number.");
-  }
-
-  const warehouse = await getDefaultWarehouse();
-
-  if (!warehouse) {
-    throw new Error("Default warehouse not found.");
   }
 
   const attributes = (input.attributes ?? [])
@@ -202,15 +171,24 @@ export const createItem = async (input: CreateItemInput) => {
     .filter((attribute) => attribute.name.length > 0);
 
   for (const attribute of attributes) {
-    if (attribute.dataType === "NUMBER" && Number.isNaN(Number(attribute.value))) {
+    if (
+      attribute.dataType === "NUMBER" &&
+      Number.isNaN(Number(attribute.value))
+    ) {
       throw new Error(`Attribute ${attribute.name} requires a valid number.`);
     }
 
-    if (attribute.dataType === "BOOLEAN" && !["true", "false"].includes(attribute.value.toLowerCase())) {
+    if (
+      attribute.dataType === "BOOLEAN" &&
+      !["true", "false"].includes(attribute.value.toLowerCase())
+    ) {
       throw new Error(`Attribute ${attribute.name} requires true or false.`);
     }
 
-    if (attribute.dataType === "DATE" && Number.isNaN(Date.parse(attribute.value))) {
+    if (
+      attribute.dataType === "DATE" &&
+      Number.isNaN(Date.parse(attribute.value))
+    ) {
       throw new Error(`Attribute ${attribute.name} requires a valid date.`);
     }
   }
@@ -218,7 +196,7 @@ export const createItem = async (input: CreateItemInput) => {
   return prisma.$transaction(async (tx) => {
     const item = await tx.item.create({
       data: {
-        warehouseId: warehouse.id,
+        warehouseId,
         name,
         description: input.description?.trim() || null,
         quantity: new Prisma.Decimal(input.quantity),
@@ -236,7 +214,7 @@ export const createItem = async (input: CreateItemInput) => {
     for (const attribute of attributes) {
       await tx.itemAttribute.create({
         data: {
-          warehouseId: warehouse.id,
+          warehouseId,
           itemId: item.id,
           name: attribute.name,
           dataType: attribute.dataType,
@@ -254,7 +232,8 @@ export const createItem = async (input: CreateItemInput) => {
 
     const changeEvent = await tx.changeEvent.create({
       data: {
-        warehouseId: warehouse.id,
+        warehouseId,
+        actorUserId: userId,
         source: "MANUAL",
         description: `Created item ${item.name}`,
       },
@@ -295,62 +274,14 @@ export const createItem = async (input: CreateItemInput) => {
       });
     }
 
-    await tx.warehouseSnapshot.create({
-      data: {
-        warehouseId: warehouse.id,
-        changeEventId: changeEvent.id,
-        state: {
-          items: (await tx.item.findMany({
-            where: {
-              warehouseId: warehouse.id,
-              archivedAt: null,
-            },
-            orderBy: {
-              createdAt: "asc",
-            },
-            select: {
-              id: true,
-              name: true,
-              description: true,
-              quantity: true,
-              archivedAt: true,
-              attributes: {
-                where: {
-                  archivedAt: null,
-                },
-                orderBy: {
-                  createdAt: "asc",
-                },
-                select: {
-                  id: true,
-                  name: true,
-                  dataType: true,
-                  value: true,
-                },
-              },
-            },
-          })).map((item) => ({
-            id: item.id,
-            name: item.name,
-            description: item.description,
-            quantity: Number(item.quantity),
-            archivedAt: item.archivedAt,
-            attributes: item.attributes.map((attribute) => ({
-              id: attribute.id,
-              name: attribute.name,
-              dataType: attribute.dataType,
-              value: attribute.value,
-            })),
-          })),
-        },
-      },
-    });
-
     return item;
   });
 };
 
-export const updateItem = async (input: UpdateItemInput) => {
+export const updateItem = async (
+  input: UpdateItemInput,
+  { userId, warehouseId }: WarehouseContext,
+) => {
   const name = input.name.trim();
 
   if (!name) {
@@ -361,16 +292,10 @@ export const updateItem = async (input: UpdateItemInput) => {
     throw new Error("Quantity must be a non-negative number.");
   }
 
-  const warehouse = await getDefaultWarehouse();
-
-  if (!warehouse) {
-    throw new Error("Default warehouse not found.");
-  }
-
   const item = await prisma.item.findFirst({
     where: {
       id: input.itemId,
-      warehouseId: warehouse.id,
+      warehouseId,
     },
   });
 
@@ -387,15 +312,24 @@ export const updateItem = async (input: UpdateItemInput) => {
     .filter((attribute) => attribute.name.length > 0);
 
   for (const attribute of attributes) {
-    if (attribute.dataType === "NUMBER" && Number.isNaN(Number(attribute.value))) {
+    if (
+      attribute.dataType === "NUMBER" &&
+      Number.isNaN(Number(attribute.value))
+    ) {
       throw new Error(`Attribute ${attribute.name} requires a valid number.`);
     }
 
-    if (attribute.dataType === "BOOLEAN" && !["true", "false"].includes(attribute.value.toLowerCase())) {
+    if (
+      attribute.dataType === "BOOLEAN" &&
+      !["true", "false"].includes(attribute.value.toLowerCase())
+    ) {
       throw new Error(`Attribute ${attribute.name} requires true or false.`);
     }
 
-    if (attribute.dataType === "DATE" && Number.isNaN(Date.parse(attribute.value))) {
+    if (
+      attribute.dataType === "DATE" &&
+      Number.isNaN(Date.parse(attribute.value))
+    ) {
       throw new Error(`Attribute ${attribute.name} requires a valid date.`);
     }
   }
@@ -419,17 +353,6 @@ export const updateItem = async (input: UpdateItemInput) => {
       },
     });
 
-    const existingAttributes = await tx.itemAttribute.findMany({
-      where: {
-        itemId: item.id,
-        archivedAt: null,
-      },
-      select: {
-        id: true,
-        name: true,
-      },
-    });
-
     await tx.itemAttribute.updateMany({
       where: {
         itemId: item.id,
@@ -443,7 +366,7 @@ export const updateItem = async (input: UpdateItemInput) => {
     for (const attribute of attributes) {
       await tx.itemAttribute.create({
         data: {
-          warehouseId: warehouse.id,
+          warehouseId,
           itemId: item.id,
           name: attribute.name,
           dataType: attribute.dataType,
@@ -461,7 +384,8 @@ export const updateItem = async (input: UpdateItemInput) => {
 
     const changeEvent = await tx.changeEvent.create({
       data: {
-        warehouseId: warehouse.id,
+        warehouseId,
+        actorUserId: userId,
         source: "MANUAL",
         description: `Updated item ${updatedItem.name}`,
       },
@@ -506,72 +430,18 @@ export const updateItem = async (input: UpdateItemInput) => {
       });
     }
 
-    await tx.warehouseSnapshot.create({
-      data: {
-        warehouseId: warehouse.id,
-        changeEventId: changeEvent.id,
-        state: {
-          items: (await tx.item.findMany({
-            where: {
-              warehouseId: warehouse.id,
-              archivedAt: null,
-            },
-            orderBy: {
-              createdAt: "asc",
-            },
-            select: {
-              id: true,
-              name: true,
-              description: true,
-              quantity: true,
-              archivedAt: true,
-              attributes: {
-                where: {
-                  archivedAt: null,
-                },
-                orderBy: {
-                  createdAt: "asc",
-                },
-                select: {
-                  id: true,
-                  name: true,
-                  dataType: true,
-                  value: true,
-                },
-              },
-            },
-          })).map((entry) => ({
-            id: entry.id,
-            name: entry.name,
-            description: entry.description,
-            quantity: Number(entry.quantity),
-            archivedAt: entry.archivedAt,
-            attributes: entry.attributes.map((attribute) => ({
-              id: attribute.id,
-              name: attribute.name,
-              dataType: attribute.dataType,
-              value: attribute.value,
-            })),
-          })),
-        },
-      },
-    });
-
     return updatedItem;
   });
 };
 
-export const archiveItem = async (itemId: string) => {
-  const warehouse = await getDefaultWarehouse();
-
-  if (!warehouse) {
-    throw new Error("Default warehouse not found.");
-  }
-
+export const archiveItem = async (
+  itemId: string,
+  { userId, warehouseId }: WarehouseContext,
+) => {
   const item = await prisma.item.findFirst({
     where: {
       id: itemId,
-      warehouseId: warehouse.id,
+      warehouseId,
     },
   });
 
@@ -603,7 +473,8 @@ export const archiveItem = async (itemId: string) => {
 
     const changeEvent = await tx.changeEvent.create({
       data: {
-        warehouseId: warehouse.id,
+        warehouseId,
+        actorUserId: userId,
         source: "MANUAL",
         description: `Archived item ${archivedItem.name}`,
       },
@@ -618,62 +489,81 @@ export const archiveItem = async (itemId: string) => {
         itemId: item.id,
         changeType: "ARCHIVE",
         fieldPath: "archivedAt",
-        beforeValue: item.archivedAt ? item.archivedAt.toISOString() : Prisma.JsonNull,
+        beforeValue: item.archivedAt
+          ? item.archivedAt.toISOString()
+          : Prisma.JsonNull,
         afterValue: archivedItem.archivedAt?.toISOString() ?? Prisma.JsonNull,
       },
     });
 
-    await tx.warehouseSnapshot.create({
-      data: {
-        warehouseId: warehouse.id,
-        changeEventId: changeEvent.id,
-        state: {
-          items: (await tx.item.findMany({
-            where: {
-              warehouseId: warehouse.id,
-              archivedAt: null,
-            },
-            orderBy: {
-              createdAt: "asc",
-            },
-            select: {
-              id: true,
-              name: true,
-              description: true,
-              quantity: true,
-              archivedAt: true,
-              attributes: {
-                where: {
-                  archivedAt: null,
-                },
-                orderBy: {
-                  createdAt: "asc",
-                },
-                select: {
-                  id: true,
-                  name: true,
-                  dataType: true,
-                  value: true,
-                },
-              },
-            },
-          })).map((entry) => ({
-            id: entry.id,
-            name: entry.name,
-            description: entry.description,
-            quantity: Number(entry.quantity),
-            archivedAt: entry.archivedAt,
-            attributes: entry.attributes.map((attribute) => ({
-              id: attribute.id,
-              name: attribute.name,
-              dataType: attribute.dataType,
-              value: attribute.value,
-            })),
-          })),
+    return archivedItem;
+  });
+};
+
+const buildWarehouseState = async (warehouseId: string) => {
+  const items = await prisma.item.findMany({
+    where: {
+      warehouseId,
+      archivedAt: null,
+    },
+    orderBy: {
+      createdAt: "asc",
+    },
+    select: {
+      id: true,
+      name: true,
+      description: true,
+      quantity: true,
+      archivedAt: true,
+      attributes: {
+        where: {
+          archivedAt: null,
+        },
+        orderBy: {
+          createdAt: "asc",
+        },
+        select: {
+          id: true,
+          name: true,
+          dataType: true,
+          value: true,
         },
       },
-    });
+    },
+  });
 
-    return archivedItem;
+  return {
+    items: items.map((entry) => ({
+      id: entry.id,
+      name: entry.name,
+      description: entry.description,
+      quantity: Number(entry.quantity),
+      archivedAt: entry.archivedAt?.toISOString() ?? null,
+      attributes: entry.attributes.map((attribute) => ({
+        id: attribute.id,
+        name: attribute.name,
+        dataType: attribute.dataType,
+        value: attribute.value,
+      })),
+    })),
+  };
+};
+
+export const createWarehouseSnapshot = async ({
+  userId,
+  warehouseId,
+}: WarehouseContext) => {
+  const state = await buildWarehouseState(warehouseId);
+
+  return prisma.warehouseSnapshot.create({
+    data: {
+      warehouseId,
+      createdByUserId: userId,
+      state,
+    },
+    select: {
+      id: true,
+      createdAt: true,
+    },
   });
 };

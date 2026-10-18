@@ -78,15 +78,15 @@ Schema changes are represented in `prisma/schema.prisma` and Prisma migrations r
 
 ### Decision
 
-The history model deliberately separates logical events, detailed field/item changes, and full historical state snapshots.
+The history model separates logical events, detailed field/item changes (diffs), and read-only warehouse snapshots. Snapshots are independent of events: they are created manually by a user between events, are never written automatically by mutations, and are only used for viewing.
 
 ### Rationale
 
-A single user operation may change multiple items, so timeline-level events and low-level field changes need different representations. Snapshots additionally allow historical state reconstruction/restoration.
+A single user operation may change multiple items, so timeline-level events and low-level field changes need different representations. Storing a full state for every event would not scale for large warehouses, so events keep only diffs. Restore is rebuilt from change entries, so snapshots are not needed for restoration.
 
 ### Consequences
 
-Do not collapse these three concepts into a single generic history table merely for simplicity.
+Do not collapse these three concepts into a single generic history table merely for simplicity. Snapshots have no foreign key to change events and must never be used as a restore source.
 
 ---
 
@@ -96,7 +96,7 @@ Do not collapse these three concepts into a single generic history table merely 
 
 ### Decision
 
-Restoring an old inventory state is itself a new mutation with `ChangeSource.RESTORE`.
+Restoring an old inventory state is itself a new mutation with `ChangeSource.RESTORE`. Restore is only possible from a change event (via the Timeline).
 
 ### Rationale
 

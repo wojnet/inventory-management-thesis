@@ -1,55 +1,58 @@
+import { auth } from "../src/lib/auth";
 import { prisma } from "../src/lib/prisma";
 import {
-  DEFAULT_ADMIN_EMAIL,
-  DEFAULT_ADMIN_NAME,
   DEFAULT_WAREHOUSE_DESCRIPTION,
   DEFAULT_WAREHOUSE_NAME,
 } from "../src/lib/inventory-context";
 
+const TEST_USER_PASSWORD = "Password123!";
+
+const TEST_USERS = [
+  { email: "test@example.com", name: "Test" },
+  { email: "test2@example.com", name: "Test 2" },
+];
+
 async function main() {
-  const adminUser =
-    (await prisma.appUser.findFirst({
-      where: {
-        email: DEFAULT_ADMIN_EMAIL,
-      },
-    })) ??
-    (await prisma.appUser.create({
-      data: {
-        email: DEFAULT_ADMIN_EMAIL,
-        name: DEFAULT_ADMIN_NAME,
-        passwordHash: "seed-password-hash",
-      },
-    }));
+  await prisma.$transaction([
+    prisma.warehouseSnapshot.deleteMany(),
+    prisma.changeEntry.deleteMany(),
+    prisma.changeEvent.deleteMany(),
+    prisma.actionStep.deleteMany(),
+    prisma.action.deleteMany(),
+    prisma.itemAttribute.deleteMany(),
+    prisma.item.deleteMany(),
+    prisma.warehouseMembership.deleteMany(),
+    prisma.warehouse.deleteMany(),
+    prisma.session.deleteMany(),
+    prisma.account.deleteMany(),
+    prisma.verification.deleteMany(),
+    prisma.appUser.deleteMany(),
+  ]);
 
-  const warehouse =
-    (await prisma.warehouse.findFirst({
-      where: {
-        name: DEFAULT_WAREHOUSE_NAME,
-      },
-    })) ??
-    (await prisma.warehouse.create({
-      data: {
-        name: DEFAULT_WAREHOUSE_NAME,
-        description: DEFAULT_WAREHOUSE_DESCRIPTION,
-      },
-    }));
-
-  await prisma.warehouseMembership.upsert({
-    where: {
-      userId_warehouseId: {
-        userId: adminUser.id,
-        warehouseId: warehouse.id,
-      },
-    },
-    create: {
-      userId: adminUser.id,
-      warehouseId: warehouse.id,
-      role: "ADMIN",
-    },
-    update: {
-      role: "ADMIN",
+  const warehouse = await prisma.warehouse.create({
+    data: {
+      name: DEFAULT_WAREHOUSE_NAME,
+      description: DEFAULT_WAREHOUSE_DESCRIPTION,
     },
   });
+
+  for (const testUser of TEST_USERS) {
+    const { user } = await auth.api.signUpEmail({
+      body: {
+        email: testUser.email,
+        password: TEST_USER_PASSWORD,
+        name: testUser.name,
+      },
+    });
+
+    await prisma.warehouseMembership.create({
+      data: {
+        userId: user.id,
+        warehouseId: warehouse.id,
+        role: "WORKER",
+      },
+    });
+  }
 
   const seedItems = [
     {
@@ -84,36 +87,25 @@ async function main() {
   ];
 
   for (const seedItem of seedItems) {
-    const existingItem = await prisma.item.findFirst({
-      where: {
+    const item = await prisma.item.create({
+      data: {
         warehouseId: warehouse.id,
         name: seedItem.name,
+        description: seedItem.description,
+        quantity: seedItem.quantity,
       },
     });
 
-    const item =
-      existingItem ??
-      (await prisma.item.create({
+    for (const attribute of seedItem.attributes) {
+      await prisma.itemAttribute.create({
         data: {
           warehouseId: warehouse.id,
-          name: seedItem.name,
-          description: seedItem.description,
-          quantity: seedItem.quantity,
+          itemId: item.id,
+          name: attribute.name,
+          dataType: attribute.dataType,
+          value: attribute.value,
         },
-      }));
-
-    if (!existingItem) {
-      for (const attribute of seedItem.attributes) {
-        await prisma.itemAttribute.create({
-          data: {
-            warehouseId: warehouse.id,
-            itemId: item.id,
-            name: attribute.name,
-            dataType: attribute.dataType,
-            value: attribute.value,
-          },
-        });
-      }
+      });
     }
   }
 }

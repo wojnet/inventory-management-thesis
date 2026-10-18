@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { toApiErrorResponse } from "@/lib/api-errors";
+import { requireApiWarehouseContext } from "@/lib/auth-context";
 import { archiveItem, getItemDetails, updateItem } from "@/lib/items";
 
 type RouteParams = {
@@ -7,19 +9,25 @@ type RouteParams = {
 
 export const dynamic = "force-dynamic";
 
-export async function GET(_request: Request, { params }: RouteParams) {
-  const { itemId } = await params;
-  const item = await getItemDetails(itemId);
+export async function GET(request: Request, { params }: RouteParams) {
+  try {
+    const warehouseContext = await requireApiWarehouseContext(request);
+    const { itemId } = await params;
+    const item = await getItemDetails(itemId, warehouseContext);
 
-  if (!item) {
-    return NextResponse.json({ error: "Item not found." }, { status: 404 });
+    if (!item) {
+      return NextResponse.json({ error: "Item not found." }, { status: 404 });
+    }
+
+    return NextResponse.json({ item });
+  } catch (error) {
+    return toApiErrorResponse(error);
   }
-
-  return NextResponse.json({ item });
 }
 
 export async function PATCH(request: Request, { params }: RouteParams) {
   try {
+    const warehouseContext = await requireApiWarehouseContext(request);
     const { itemId } = await params;
     const body = (await request.json()) as {
       name?: string;
@@ -32,47 +40,58 @@ export async function PATCH(request: Request, { params }: RouteParams) {
       }>;
     };
 
-    const quantity = typeof body.quantity === "string" ? Number(body.quantity) : body.quantity;
+    const quantity =
+      typeof body.quantity === "string" ? Number(body.quantity) : body.quantity;
 
     if (typeof body.name !== "string") {
-      return NextResponse.json({ error: "Item name is required." }, { status: 400 });
+      return NextResponse.json(
+        { error: "Item name is required." },
+        { status: 400 },
+      );
     }
 
     if (quantity === undefined || quantity === null || Number.isNaN(quantity)) {
-      return NextResponse.json({ error: "Quantity is required." }, { status: 400 });
+      return NextResponse.json(
+        { error: "Quantity is required." },
+        { status: 400 },
+      );
     }
 
-    const item = await updateItem({
-      itemId,
-      name: body.name,
-      description: body.description,
-      quantity,
-      attributes: body.attributes
-        ?.filter((attribute) => typeof attribute.name === "string" && typeof attribute.dataType === "string")
-        .map((attribute) => ({
-          name: attribute.name ?? "",
-          dataType: attribute.dataType ?? "TEXT",
-          value: attribute.value ?? "",
-        })),
-    });
+    const item = await updateItem(
+      {
+        itemId,
+        name: body.name,
+        description: body.description,
+        quantity,
+        attributes: body.attributes
+          ?.filter(
+            (attribute) =>
+              typeof attribute.name === "string" &&
+              typeof attribute.dataType === "string",
+          )
+          .map((attribute) => ({
+            name: attribute.name ?? "",
+            dataType: attribute.dataType ?? "TEXT",
+            value: attribute.value ?? "",
+          })),
+      },
+      warehouseContext,
+    );
 
     return NextResponse.json({ item });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unexpected error.";
-
-    return NextResponse.json({ error: message }, { status: 400 });
+    return toApiErrorResponse(error);
   }
 }
 
-export async function POST(_request: Request, { params }: RouteParams) {
+export async function POST(request: Request, { params }: RouteParams) {
   try {
+    const warehouseContext = await requireApiWarehouseContext(request);
     const { itemId } = await params;
-    const item = await archiveItem(itemId);
+    const item = await archiveItem(itemId, warehouseContext);
 
     return NextResponse.json({ item });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unexpected error.";
-
-    return NextResponse.json({ error: message }, { status: 400 });
+    return toApiErrorResponse(error);
   }
 }

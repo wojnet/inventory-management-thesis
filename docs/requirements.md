@@ -57,8 +57,8 @@ Every inventory mutation must produce an auditable change event.
 **FR-14 — Record field/item-level changes**  
 A change event can contain multiple change entries describing individual affected items or fields.
 
-**FR-15 — Store historical snapshots**  
-The system stores a snapshot of warehouse state for supported historical points.
+**FR-15 — Create manual snapshots**  
+A user can create a read-only snapshot document of the exact current warehouse state at any point between events. Snapshots are never created automatically and cannot be restored.
 
 **FR-16 — Browse history**  
 A user can browse recorded inventory changes chronologically.
@@ -67,10 +67,10 @@ A user can browse recorded inventory changes chronologically.
 A user can inspect the cause and details of a change, including before/after values where available.
 
 **FR-18 — View historical state**  
-A user can inspect a historical state without modifying the current state.
+A user can inspect a historical state or snapshot without modifying the current state.
 
 **FR-19 — Restore historical state**  
-A user can request restoration of a historical state. Restoration must create a new change event with source `RESTORE`.
+A user can restore the state at a chosen change event from the Timeline. Restoration must create a new change event with source `RESTORE`.
 
 **FR-20 — Preserve previous history**  
 Restoration must not delete, rewrite, or silently alter previous history.

@@ -3,6 +3,11 @@ generator client {
   output   = "../src/generated/prisma"
 }
 
+generator erd {
+  provider = "prisma-erd-generator"
+  output   = "../docs/database-erd.svg"
+}
+
 datasource db {
   provider = "postgresql"
 }
@@ -41,16 +46,67 @@ enum ChangeType {
 }
 
 model AppUser {
-  id           String   @id @default(uuid()) @db.Uuid
-  email        String   @unique @db.VarChar(255)
-  passwordHash String   @db.Text
-  name         String   @db.VarChar(100)
-  createdAt    DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt    DateTime @updatedAt @db.Timestamptz(6)
+  id            String   @id @default(uuid()) @db.Uuid
+  email         String   @unique @db.VarChar(255)
+  emailVerified Boolean  @default(false)
+  name          String   @db.VarChar(100)
+  image         String?  @db.Text
+  createdAt     DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt     DateTime @updatedAt @db.Timestamptz(6)
 
-  memberships    WarehouseMembership[]
-  actions         Action[]
-  changeEvents    ChangeEvent[]
+  memberships        WarehouseMembership[]
+  actions            Action[]
+  changeEvents       ChangeEvent[]
+  warehouseSnapshots WarehouseSnapshot[]
+  sessions           Session[]
+  accounts           Account[]
+}
+
+model Session {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  token     String   @unique @db.VarChar(255)
+  expiresAt DateTime @db.Timestamptz(6)
+  ipAddress String?  @db.VarChar(45)
+  userAgent String?  @db.Text
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  user AppUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Account {
+  id                    String    @id @default(uuid()) @db.Uuid
+  userId                String    @db.Uuid
+  accountId             String    @db.VarChar(255)
+  providerId            String    @db.VarChar(255)
+  accessToken           String?   @db.Text
+  refreshToken          String?   @db.Text
+  idToken               String?   @db.Text
+  accessTokenExpiresAt  DateTime? @db.Timestamptz(6)
+  refreshTokenExpiresAt DateTime? @db.Timestamptz(6)
+  scope                 String?   @db.Text
+  password              String?   @db.Text
+  createdAt             DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt             DateTime  @updatedAt @db.Timestamptz(6)
+
+  user AppUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, accountId])
+  @@index([userId])
+}
+
+model Verification {
+  id         String   @id @default(uuid()) @db.Uuid
+  identifier String   @db.VarChar(255)
+  value      String   @db.Text
+  expiresAt  DateTime @db.Timestamptz(6)
+  createdAt  DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @db.Timestamptz(6)
+
+  @@index([identifier])
 }
 
 model Warehouse {
@@ -93,9 +149,9 @@ model Item {
   updatedAt   DateTime  @updatedAt @db.Timestamptz(6)
   archivedAt  DateTime? @db.Timestamptz(6)
 
-  warehouse  Warehouse       @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
-  attributes ItemAttribute[]
-  actionSteps ActionStep[]
+  warehouse     Warehouse       @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  attributes    ItemAttribute[]
+  actionSteps   ActionStep[]
   changeEntries ChangeEntry[]
 
   @@index([warehouseId])
@@ -141,16 +197,16 @@ model Action {
 }
 
 model ActionStep {
-  id              String          @id @default(uuid()) @db.Uuid
-  actionId        String          @db.Uuid
-  itemId          String?         @db.Uuid
-  attributeId     String?         @db.Uuid
-  position        Int
-  operation       ActionOperation
-  numericValue    Decimal?        @db.Decimal(18, 3)
-  attributeValue  Json?           @db.JsonB
-  createdAt       DateTime        @default(now()) @db.Timestamptz(6)
-  updatedAt       DateTime        @updatedAt @db.Timestamptz(6)
+  id             String          @id @default(uuid()) @db.Uuid
+  actionId       String          @db.Uuid
+  itemId         String?         @db.Uuid
+  attributeId    String?         @db.Uuid
+  position       Int
+  operation      ActionOperation
+  numericValue   Decimal?        @db.Decimal(18, 3)
+  attributeValue Json?           @db.JsonB
+  createdAt      DateTime        @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime        @updatedAt @db.Timestamptz(6)
 
   action    Action         @relation(fields: [actionId], references: [id], onDelete: Cascade)
   item      Item?          @relation(fields: [itemId], references: [id], onDelete: Restrict)
@@ -171,15 +227,14 @@ model ChangeEvent {
   note            String?      @db.Text
   createdAt       DateTime     @default(now()) @db.Timestamptz(6)
 
-  warehouse     Warehouse        @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
-  actorUser     AppUser?         @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
-  action        Action?          @relation(fields: [actionId], references: [id], onDelete: SetNull)
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  actorUser AppUser?  @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  action    Action?   @relation(fields: [actionId], references: [id], onDelete: SetNull)
 
   restoredEvent ChangeEvent?  @relation("RestoreRelation", fields: [restoredEventId], references: [id], onDelete: SetNull)
   restores      ChangeEvent[] @relation("RestoreRelation")
 
-  entries  ChangeEntry[]
-  snapshot WarehouseSnapshot?
+  entries ChangeEntry[]
 
   @@index([warehouseId, createdAt])
 }
@@ -202,14 +257,14 @@ model ChangeEntry {
 }
 
 model WarehouseSnapshot {
-  id            String   @id @default(uuid()) @db.Uuid
-  warehouseId   String   @db.Uuid
-  changeEventId String   @unique @db.Uuid
-  state         Json     @db.JsonB
-  createdAt     DateTime @default(now()) @db.Timestamptz(6)
+  id              String   @id @default(uuid()) @db.Uuid
+  warehouseId     String   @db.Uuid
+  createdByUserId String?  @db.Uuid
+  state           Json     @db.JsonB
+  createdAt       DateTime @default(now()) @db.Timestamptz(6)
 
-  warehouse   Warehouse   @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
-  changeEvent ChangeEvent @relation(fields: [changeEventId], references: [id], onDelete: Cascade)
+  warehouse     Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  createdByUser AppUser?  @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
 
   @@index([warehouseId, createdAt])
 }

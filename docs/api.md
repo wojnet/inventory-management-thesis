@@ -166,28 +166,46 @@ Expected capabilities may include pagination and filters such as source/date, de
 
 ### `GET /api/timeline/:eventId`
 
-Returns details for one ChangeEvent, including its change entries and relevant snapshot information.
+Returns details for one ChangeEvent, including its change entries (diffs).
 
 ## 8. Planned Restore Endpoints
 
+Restore is only possible from a change event (from the Timeline).
+
 ### `POST /api/timeline/:eventId/restore-preview`
 
-Builds a preview showing the differences between the selected historical state and the current state.
+Builds a preview showing the differences between the state at the selected event and the current state. The state is rebuilt by replaying change entries.
 
 No inventory mutation occurs.
 
 ### `POST /api/timeline/:eventId/restore`
 
-Restores the selected historical state.
+Restores the state at the selected event.
 
 The backend must:
 
 - verify authorization,
-- verify that the historical state belongs to the current warehouse,
+- verify that the target event belongs to the current warehouse,
 - calculate the required changes,
 - apply them transactionally,
 - create a new `ChangeEvent` with source `RESTORE`,
-- preserve the original historical event.
+- preserve the original history.
+
+## 8a. Planned Snapshot Endpoints
+
+Snapshots are read-only documents of the exact warehouse state. They cannot be restored.
+
+### `GET /api/snapshots`
+
+Returns the snapshots for the current warehouse.
+
+### `GET /api/snapshots/:snapshotId`
+
+Returns one snapshot document.
+
+### `POST /api/snapshots`
+
+Creates a manual snapshot of the current warehouse state. It is not linked to any change event.
 
 ## 9. Planned AI Backend Surface
 

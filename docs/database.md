@@ -1,293 +1,187 @@
 # Database
 
-## 1. Database Technology
+![Database ER diagram](./database-erd.svg)
 
-The application uses **PostgreSQL** as its relational database and **Prisma** as its ORM/data-access layer.
+The application uses **PostgreSQL** with **Prisma**. The Prisma schema is maintained in [`prisma/schema.prisma`](../prisma/schema.prisma), and database changes are versioned with Prisma migrations.
 
-Prisma migrations are the mechanism for versioning schema changes.
+## Data model
 
-The current schema uses UUID identifiers, PostgreSQL timestamps, decimal quantities, and JSONB for flexible values where required.
+The database is organized around a warehouse, its inventory, reusable operations, and a complete history of changes.
 
-## 2. Core Tables
+| Table / model | Purpose |
+|---|---|
+| `app_user` | Stores application users. |
+| `warehouse` | Represents an inventory context. |
+| `warehouse_membership` | Connects users to warehouses and stores their warehouse-specific role. |
+| `item` | Stores inventory items and their quantities. |
+| `item_attribute` | Stores customizable attributes for items. |
+| `action` | Stores reusable operations for changing inventory. |
+| `action_step` | Stores the ordered steps within an action. |
+| `change_event` | Groups one logical inventory operation for the timeline. |
+| `change_entry` | Records the individual item or field changes within an event. |
+| `warehouse_snapshot` | Stores a read-only document of the exact warehouse state, created manually between events. It is never used for restore. |
 
-The current domain model contains ten main tables/models:
+## Main relationships
 
-1. `app_user`
-2. `warehouse`
-3. `warehouse_membership`
-4. `item`
-5. `item_attribute`
-6. `action`
-7. `action_step`
-8. `change_event`
-9. `change_entry`
-10. `warehouse_snapshot`
+- A **user** can belong to many **warehouses** through `warehouse_membership`.
+- A **warehouse** owns its **items**, **attributes**, **actions**, **change events**, and **snapshots**.
+- An **item** can have multiple customizable **attributes**.
+- An **action** contains ordered **action steps** that can modify items or attributes.
+- A **change event** can contain multiple **change entries**. It has no link to snapshots.
+- A **snapshot** is independent of change events and is created manually by a user.
+- A restore operation creates a new change event linked to the historical event it restores.
 
-The exact Prisma schema is maintained in `prisma/schema.prisma` and is the authoritative representation of the implemented model.
+## Inventory
 
-## 3. Users and Warehouses
+Items belong to one warehouse and have a decimal quantity with three fractional places. Items can be archived using `archivedAt`, which records when they were archived instead of using a simple boolean flag.
 
-### `app_user`
-
-Represents an application user.
-
-Important fields:
-
-- `id`
-- `email`
-- `passwordHash`
-- `name`
-- `createdAt`
-- `updatedAt`
-
-A user can belong to multiple warehouses through memberships.
-
-### `warehouse`
-
-Represents a logical inventory context.
-
-Important fields:
-
-- `id`
-- `name`
-- `description`
-- timestamps
-
-A warehouse owns items, attributes, Actions, change events, and snapshots.
-
-### `warehouse_membership`
-
-Represents the relationship between a user and a warehouse.
-
-The role belongs here because the same user may have different permissions in different warehouses.
-
-Supported roles:
-
-- `ADMIN`
-- `WORKER`
-
-Important invariant:
-
-```text
-(user_id, warehouse_id) must be unique
-```
-
-A separate index on `warehouse_id` supports warehouse-scoped queries.
-
-## 4. Items
-
-### `item`
-
-Represents an inventory item.
-
-Important fields:
-
-- `name`
-- `description`
-- `quantity`
-- `warehouseId`
-- `archivedAt`
-- timestamps
-
-Quantity is stored as a PostgreSQL decimal with three decimal places. This allows quantities that are not necessarily whole numbers.
-
-`archivedAt` is used instead of a boolean archive flag so the system can record when an item entered the archived state.
-
-Items are warehouse-scoped.
-
-### `item_attribute`
-
-Stores customizable item attributes.
-
-Supported data types:
+Custom item attributes support these data types:
 
 - `TEXT`
 - `NUMBER`
 - `BOOLEAN`
 - `DATE`
 
-The value itself is stored as JSONB because the structure depends on the declared attribute data type.
+Attribute values are stored as PostgreSQL `JSONB` because their representation depends on the selected data type.
 
-Attributes contain timestamps because attribute changes are relevant to the historical model.
+## Actions
 
-## 5. Actions
+Actions are reusable warehouse operations. Their steps can:
 
-### `action`
+- increase a quantity;
+- decrease a quantity;
+- set a quantity;
+- set an attribute.
 
-Represents a reusable operation defined for a warehouse.
+Steps have a unique `(actionId, position)` pair, so their execution order is deterministic.
 
-Important fields include:
+## History and restoration
 
-- `warehouseId`
-- optional `createdByUserId`
-- `name`
-- `description`
-- archival state
+The history model separates the operation from its details:
 
-### `action_step`
+- `change_event` is the meaningful operation shown in the timeline;
+- `change_entry` describes each field-level or item-level change (the diff);
+- `warehouse_snapshot` stores a read-only document of the exact warehouse state, created manually by a user between events. It references the warehouse and the creating user (`createdByUserId`, set to `NULL` if the user is deleted).
 
-Represents one ordered operation inside an Action.
+For example, one action that changes three items produces one `ChangeEvent` and at least three `ChangeEntry` records. Events store only diffs, so they stay small even for large warehouses.
 
-Supported operation types are:
+Snapshots are created on demand from a "Create snapshot" option. They are not tied to any event and are only viewed, never restored.
+
+Restoring historical state does not modify or remove the original history. Restore is only possible from a change event (from the Timeline, "restore / go back in time"). It rebuilds the state at that event by replaying change entries, and creates a new event with source `RESTORE` linked to the event being restored.
+
+---
+
+## Technical reference
+
+The following sections document implementation details, constraints, and rules that should be preserved when changing the data model.
+
+### Database conventions
+
+- PostgreSQL is the database provider.
+- Prisma is the ORM and migration tool.
+- IDs use UUIDs.
+- Timestamps use PostgreSQL `timestamptz(6)`.
+- Quantities use `decimal(18, 3)`.
+- Flexible values use PostgreSQL `JSONB`.
+- The generated Prisma Client is written to `src/generated/prisma`.
+- The ERD is generated at `docs/database-erd.svg`.
+
+### Enums
+
+`WarehouseRole`:
+
+- `ADMIN`
+- `WORKER`
+
+`AttributeDataType`:
+
+- `TEXT`
+- `NUMBER`
+- `BOOLEAN`
+- `DATE`
+
+`ActionOperation`:
 
 - `INCREASE_QUANTITY`
 - `DECREASE_QUANTITY`
 - `SET_QUANTITY`
 - `SET_ATTRIBUTE`
 
-An Action step has a unique `(actionId, position)` pair so execution order is deterministic.
-
-The fields used by a step depend on the selected operation. The application's validation/service layer is responsible for enforcing these cross-field rules.
-
-## 6. Change Tracking Model
-
-### `change_event`
-
-Represents one logical inventory operation.
-
-Possible sources:
+`ChangeSource`:
 
 - `MANUAL`
 - `ACTION`
 - `AI`
 - `RESTORE`
 
-Possible change types are represented on individual entries rather than on the event itself.
-
-Useful relationships:
-
-- warehouse,
-- actor user,
-- Action when applicable,
-- restored event when this event is a restore,
-- change entries,
-- optional warehouse snapshot.
-
-The event is the unit shown to users as one meaningful timeline operation.
-
-### `change_entry`
-
-Represents an individual field/item-level change within a logical event.
-
-Important fields include:
-
-- `itemId`
-- `changeType`
-- `fieldPath`
-- `beforeValue`
-- `afterValue`
-
-Possible change types:
+`ChangeType`:
 
 - `CREATE`
 - `UPDATE`
 - `ARCHIVE`
 - `RESTORE`
 
-A single event can contain multiple entries.
+### Key constraints and indexes
 
-For example, an Action changing three items can produce:
+- `warehouse_membership` has a unique `(userId, warehouseId)` pair.
+- `action_step` has a unique `(actionId, position)` pair.
+- `warehouse_snapshot` has no foreign key to `change_event`.
+- Warehouse-scoped queries are supported by indexes on `warehouseId`.
+- Timeline queries are supported by the composite index on `change_event(warehouseId, createdAt)`.
+- Related records are indexed by their foreign keys, including `itemId`, `actionId`, and `changeEventId`.
 
-```text
-1 ChangeEvent
-3+ ChangeEntry records
-```
+### Referential integrity
 
-This keeps the event-level timeline understandable while retaining detailed audit information.
+Foreign keys use deliberate deletion behaviour:
 
-## 7. Warehouse Snapshots
+- Deleting a warehouse cascades to warehouse-owned data.
+- Deleting a user cascades to their memberships.
+- Deleting an action creator sets `createdByUserId` to `NULL` without deleting the action.
+- Deleting an item is restricted when an existing action step references it.
+- Deleting an item sets the related `change_entry.itemId` to `NULL`, preserving the historical entry.
+- Deleting a change event cascades to its entries.
+- Deleting the event referenced by `restoredEventId` sets that reference to `NULL`.
 
-### `warehouse_snapshot`
+Application code must not bypass these constraints.
 
-Stores a JSONB representation of warehouse state associated with a specific change event.
-
-Important relationships:
-
-- one warehouse,
-- one unique change event.
-
-Snapshots provide the state required for historical inspection and restoration.
-
-The snapshot mechanism is not intended to replace change entries. The two serve different purposes:
-
-- entries explain **what changed**,
-- snapshots represent **what the warehouse looked like** at a recorded point in time.
-
-## 8. Restore Relationship
-
-`change_event.restoredEventId` links a RESTORE event to the historical event/state it was created from.
-
-Conceptually:
-
-```text
-Event A  ───── historical state
-   │
-   ▼
-Restore request
-   │
-   ▼
-Event B (source = RESTORE)
-```
-
-Event A remains unchanged. Event B becomes part of the history.
-
-## 9. Referential Integrity
-
-The database uses foreign keys with deliberate deletion behaviour.
-
-Important examples:
-
-- Deleting a warehouse can cascade to warehouse-owned data.
-- Deleting a user can remove their memberships.
-- Deleting the creator of an Action does not destroy the Action; the creator reference can become null.
-- Deleting an item is restricted where an existing Action step depends on that item.
-- Change entries can retain historical information even if the current item reference is later unavailable.
-
-Application code should not bypass these integrity constraints.
-
-## 10. Data Invariants
-
-The following rules are important enough to preserve whenever the schema evolves:
+### Data invariants
 
 1. Every item belongs to exactly one warehouse.
-2. Every item attribute belongs to both an item and its warehouse context.
-3. Every Action belongs to one warehouse.
-4. Action step ordering is unique within its Action.
-5. A user's warehouse membership is unique per `(user, warehouse)` pair.
+2. Every item attribute belongs to an item and a warehouse context.
+3. Every action belongs to one warehouse.
+4. Action step positions are unique within an action.
+5. A user's membership is unique per warehouse.
 6. Change events are warehouse-scoped.
-7. Snapshots belong to the same warehouse as their associated event.
-8. AI is not represented as a database user; AI is represented by `ChangeSource.AI` while the human actor can still be recorded.
-9. Historical restoration must not rewrite previous events.
-10. Quantity changes must preserve the database's numeric precision and application-level domain rules.
+7. A snapshot belongs to exactly one warehouse and is not linked to any change event.
+8. AI operations use `ChangeSource.AI`; AI is not stored as a database user.
+9. Restoring history creates a new event and never rewrites previous events.
+10. Quantity changes preserve decimal precision and application-level domain rules.
+11. Change entries must store enough before/after values to replay or reverse the change.
 
-## 11. Schema vs Application Validation
+### Application-level validation
 
-Not every business rule should be encoded directly in Prisma schema declarations.
+Not every business rule is encoded in the Prisma schema. In particular, the valid combination of `itemId`, `attributeId`, `numericValue`, and `attributeValue` depends on the `ActionStep.operation`.
 
-For example, an `ActionStep` may require different combinations of `itemId`, `attributeId`, `numericValue`, and `attributeValue` depending on its operation.
+The application validation and domain layers must enforce these cross-field rules. A schema change should not assume that nullable fields are valid for every operation.
 
-These rules belong in the application validation/domain layer unless a database-level constraint is deliberately added.
+### Schema change workflow
 
-## 12. Database Changes
-
-Schema changes should be made through Prisma migrations rather than manually modifying the live database.
-
-Development workflow:
+Schema changes should be made through Prisma migrations:
 
 ```text
-Edit Prisma schema
-      ↓
-prisma migrate dev --name <change>
-      ↓
-Review migration
-      ↓
-Generate Prisma Client when required
-      ↓
-Commit schema + migration
+Edit prisma/schema.prisma
+        ↓
+npx prisma migrate dev --name <change>
+        ↓
+Review the generated migration
+        ↓
+npx prisma generate
+        ↓
+Commit the schema and migration
 ```
 
 Containerized environments apply committed migrations with:
 
-```text
-prisma migrate deploy
+```powershell
+npx prisma migrate deploy
 ```

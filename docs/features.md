@@ -107,6 +107,8 @@ A WarehouseSnapshot answers:
 
 > What did the warehouse look like at this point in time?
 
+Snapshots are read-only documents created manually by a user between events. They are independent of ChangeEvents, are never created automatically by mutations, and are never used for restore.
+
 ### Sources
 
 Every mutation has one source:
@@ -124,13 +126,13 @@ Users can inspect historical state without changing the current state.
 
 ### Restore
 
-Restore is itself a normal domain mutation.
+Restore is itself a normal domain mutation. It is started from the Timeline ("restore / go back in time") for a chosen event. Snapshots cannot be restored.
 
-The selected historical snapshot is used as the target state. The application calculates and applies the differences required to move the current warehouse toward that state.
+The target state is rebuilt by replaying change entries, and the application calculates and applies the differences required to move the current warehouse toward that state.
 
 A new ChangeEvent with source `RESTORE` records the operation.
 
-The old event and snapshot remain intact.
+The old events and snapshots remain intact.
 
 ---
 
